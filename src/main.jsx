@@ -9,7 +9,7 @@ const days = d => { if(!d) return '—'; const dt=new Date(d); if(isNaN(dt)) ret
 
 function norm(r){ const f=r.fields||{}; return {
  id:r.id, name:pick(f,['Name','Nombre','Paciente']), dni:pick(f,['DNI','Documento']), centro:pick(f,['Centro','CENTRO','Institución','Institucion'])||'Sin centro', fi:pick(f,['FI','Fecha ingreso','Fecha de ingreso']), tipo:pick(f,['tipo','Tipo']), dx:pick(f,['Dx inicial','Diagnóstico inicial','Diagnostico inicial']), dxf:pick(f,['Dx final','Diagnóstico final','Diagnostico final']), dxs:pick(f,['Dxs','Diagnósticos asociados','Diagnosticos asociados']), edad:pick(f,['Edad','age']), sexo:pick(f,['Sexo','sex']), enf:pick(f,['enfermedad actual','Enfermedad actual','Evolución','Evolucion']), resp:pick(f,['Asistencia respiratoria','ARM','Resp']), vaso:pick(f,['Vasoactivos','Vaso','Vasopresores']), renal:pick(f,['NR','TRR','Terapia de reemplazo renal','Renal']), atb:pick(f,['ATB','Antibióticos','Antibioticos']), status:pick(f,['Status','Estado']), muerte:pick(f,['Muerte']) } }
-}
+
 
 function App(){ const [records,setRecords]=useState([]),[q,setQ]=useState(''),[centro,setCentro]=useState('Todos'),[sel,setSel]=useState(null),[err,setErr]=useState(''),[loading,setLoading]=useState(true);
  useEffect(()=>{fetch('/.netlify/functions/patients').then(r=>r.json()).then(d=>{ if(d.error) setErr(d.error); else { const p=d.map(norm); setRecords(p); setSel(p[0]||null);} }).catch(e=>setErr(e.message)).finally(()=>setLoading(false))},[]);
