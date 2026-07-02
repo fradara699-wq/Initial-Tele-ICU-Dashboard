@@ -65,11 +65,11 @@ const isMuerte = p => yes(p.muerte) || txt(p.status).includes('falle') || txt(p.
 const isEgresado = p => ['alta','egreso','egresado','derivado','fallecido','muerte','óbito','obito'].some(w => txt(p.status).includes(w));
 const isInternado = p => {
   const s = txt(p.status).replace(/\s+/g, ' ');
-  // Para no perder pacientes: internado = todo paciente que NO esté marcado como alta, egreso, derivado o fallecido.
-  // Además acepta Status = "In progress" y variantes.
+  // Airtable muestra "In progress"; aceptamos variantes como "in progres", "progress", "prog", etc.
   if (s.includes('progress') || s.includes('progres') || s.includes('prog')) return true;
   if (isMuerte(p) || isEgresado(p)) return false;
-  return true;
+  if (['internado','internada','activo','activa','actual','hospitalizado','uti','ucc'].some(w => s.includes(w))) return true;
+  return false;
 };
 const isARM = p => yes(p.resp) || txt(p.resp).includes('arm') || txt(p.resp).includes('invasiva');
 const isVaso = p => yes(p.vaso) || String(p.vaso || '').trim().length > 1;
