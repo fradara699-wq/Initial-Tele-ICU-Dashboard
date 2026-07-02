@@ -1,60 +1,23 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, Building2, Search, Stethoscope, Users, HeartPulse, Wind, Droplets, AlertTriangle } from 'lucide-react';
+import { Activity, AlertTriangle, HeartPulse, Search, Stethoscope, Users } from 'lucide-react';
 import './styles.css';
 
-const FIELD = {
-  name: 'Name', dni: 'DNI', center: 'Centro', date: 'FI', type: 'tipo', dxInicial: 'Dx inicial', dxFinal: 'Dx final', dxs: 'Dxs', current: 'enfermedad actual', sex: 'Sexo', age: 'Edad', app: 'APP', status: 'Status', resp: 'Asistencia respiratoria', atb: 'ATB', vaso: 'Vasoactivos', renal: 'NR', piso: 'Piso', muerte: 'Muerte', derivacion: 'Derivación', alta: 'Alta a domicil', altaVol: 'Alta_voluntaria', egreso: 'Egreso'
-};
+const pick = (f, names) => names.map(n => f?.[n]).find(v => v !== undefined && v !== null && String(v).trim() !== '') || '';
+const yes = v => ['si','sí','yes','true','1','x'].includes(String(v||'').toLowerCase().trim());
+const days = d => { if(!d) return '—'; const dt=new Date(d); if(isNaN(dt)) return '—'; return Math.max(1, Math.ceil((Date.now()-dt)/86400000)); };
 
-function text(v){ return (v ?? '').toString().trim(); }
-function yes(v){ const s=text(v).toLowerCase(); return !!s && !['no','nan','false','0'].includes(s); }
-function hasAny(v, terms){ const s=text(v).toLowerCase(); return terms.some(t=>s.includes(t)); }
-function parseDateAR(v){ const s=text(v); const [d,m,y]=s.split(/[\/\-]/).map(Number); if(!d||!m||!y) return null; return new Date(y,m-1,d); }
-function daysSince(v){ const d=parseDateAR(v); if(!d) return '—'; return Math.max(0, Math.floor((Date.now()-d.getTime())/86400000)); }
-
-const SAMPLE = [
-  { id:'demo1', fields:{ Name:'Paciente demo', DNI:'00000000', Centro:'Demo', FI:'01/07/2026', tipo:'médico', 'Dx inicial':'Sepsis respiratoria', Dxs:'Shock séptico, AKI', 'enfermedad actual':'Ejemplo de ficha. Cargá las variables de Airtable para ver datos reales.', Sexo:'F', Edad:70, APP:'HTA', Status:'In progress', 'Asistencia respiratoria':'ARM', ATB:'PTZ', Vasoactivos:'Nora', NR:'TRR' } }
-];
-
-async function fetchAirtable(){
-  const token = import.meta.env.VITE_AIRTABLE_TOKEN;
-  const baseId = import.meta.env.VITE_AIRTABLE_BASE_ID;
-  const table = import.meta.env.VITE_AIRTABLE_TABLE_NAME || 'Table 1';
-  if(!token || !baseId || token.includes('TU_TOKEN') || baseId.includes('TU_BASE')) return SAMPLE;
-  let all=[]; let offset='';
-  do {
-    const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}?pageSize=100${offset ? `&offset=${offset}` : ''}`;
-    const res = await fetch(url, { headers:{ Authorization:`Bearer ${token}` }});
-    if(!res.ok) throw new Error(`Airtable error ${res.status}: ${await res.text()}`);
-    const json = await res.json(); all = all.concat(json.records || []); offset = json.offset;
-  } while(offset);
-  return all;
+function norm(r){ const f=r.fields||{}; return {
+ id:r.id, name:pick(f,['Name','Nombre','Paciente']), dni:pick(f,['DNI','Documento']), centro:pick(f,['Centro','CENTRO','Institución','Institucion'])||'Sin centro', fi:pick(f,['FI','Fecha ingreso','Fecha de ingreso']), tipo:pick(f,['tipo','Tipo']), dx:pick(f,['Dx inicial','Diagnóstico inicial','Diagnostico inicial']), dxf:pick(f,['Dx final','Diagnóstico final','Diagnostico final']), dxs:pick(f,['Dxs','Diagnósticos asociados','Diagnosticos asociados']), edad:pick(f,['Edad','age']), sexo:pick(f,['Sexo','sex']), enf:pick(f,['enfermedad actual','Enfermedad actual','Evolución','Evolucion']), resp:pick(f,['Asistencia respiratoria','ARM','Resp']), vaso:pick(f,['Vasoactivos','Vaso','Vasopresores']), renal:pick(f,['NR','TRR','Terapia de reemplazo renal','Renal']), atb:pick(f,['ATB','Antibióticos','Antibioticos']), status:pick(f,['Status','Estado']), muerte:pick(f,['Muerte']) } }
 }
 
-function Stat({icon:Icon,label,value}){ return <div className="stat"><Icon size={22}/><div><b>{value}</b><span>{label}</span></div></div> }
-
-function App(){
-  const [records,setRecords]=useState([]); const [loading,setLoading]=useState(true); const [error,setError]=useState('');
-  const [q,setQ]=useState(''); const [center,setCenter]=useState('Todos'); const [selected,setSelected]=useState(null);
-  useEffect(()=>{ fetchAirtable().then(r=>{setRecords(r); setSelected(r[0]||null)}).catch(e=>setError(e.message)).finally(()=>setLoading(false)); },[]);
-  const rows = records.map(r=>({id:r.id, ...r.fields}));
-  const centers = ['Todos', ...Array.from(new Set(rows.map(r=>text(r[FIELD.center])).filter(Boolean)))];
-  const filtered = rows.filter(r => (center==='Todos'||text(r[FIELD.center])===center) && [FIELD.name,FIELD.dni,FIELD.center,FIELD.dxInicial,FIELD.dxs].some(k=>text(r[k]).toLowerCase().includes(q.toLowerCase())));
-  const stats = useMemo(()=>({ total: rows.length, active: rows.filter(r=>text(r[FIELD.status]).toLowerCase().includes('progress')).length, arm: rows.filter(r=>hasAny(r[FIELD.resp],['arm','vmi','mecánica'])).length, vni: rows.filter(r=>hasAny(r[FIELD.resp],['vni','bipap'])).length, vaso: rows.filter(r=>yes(r[FIELD.vaso])).length, renal: rows.filter(r=>yes(r[FIELD.renal])).length, muerte: rows.filter(r=>yes(r[FIELD.muerte])).length }),[records]);
-  const s = selected;
-  return <div className="app">
-    <aside><h1>Tele ICU<br/><span>Dashboard</span></h1><p className="muted">Panel operativo conectado a Airtable</p><div className="centers">{centers.map(c=><button className={c===center?'active':''} onClick={()=>setCenter(c)} key={c}><Building2 size={16}/>{c}</button>)}</div></aside>
-    <main>
-      <header><div><h2>Pacientes Tele-ICU</h2><p>{loading?'Cargando...':`${filtered.length} pacientes visibles`}</p></div><div className="search"><Search size={18}/><input placeholder="Buscar nombre, DNI, centro o diagnóstico" value={q} onChange={e=>setQ(e.target.value)}/></div></header>
-      {error && <div className="error">{error}</div>}
-      <section className="stats"><Stat icon={Users} label="Total" value={stats.total}/><Stat icon={Activity} label="Activos" value={stats.active}/><Stat icon={Wind} label="ARM" value={stats.arm}/><Stat icon={HeartPulse} label="Vasoactivos" value={stats.vaso}/><Stat icon={Droplets} label="TRR/NR" value={stats.renal}/><Stat icon={AlertTriangle} label="Muerte" value={stats.muerte}/></section>
-      <div className="grid">
-        <section className="list">{filtered.map(r=><article key={r.id} className={s?.id===r.id?'card selected':'card'} onClick={()=>setSelected(r)}><div><b>{text(r[FIELD.name])||'Sin nombre'}</b><span>{text(r[FIELD.center])||'Sin centro'} · {text(r[FIELD.age])||'—'} años · día {daysSince(r[FIELD.date])}</span></div><small>{text(r[FIELD.dxInicial])||text(r[FIELD.dxs])||'Sin diagnóstico'}</small><div className="badges">{hasAny(r[FIELD.resp],['arm','vni'])&&<em>Resp</em>}{yes(r[FIELD.vaso])&&<em>Vaso</em>}{yes(r[FIELD.renal])&&<em>Renal</em>}</div></article>)}</section>
-        <section className="detail">{s ? <><div className="detailHead"><Stethoscope/><div><h3>{text(s[FIELD.name])}</h3><p>{text(s[FIELD.center])} · DNI {text(s[FIELD.dni])||'—'}</p></div></div><dl><dt>Edad / Sexo</dt><dd>{text(s[FIELD.age])||'—'} / {text(s[FIELD.sex])||'—'}</dd><dt>Fecha ingreso</dt><dd>{text(s[FIELD.date])||'—'} · día {daysSince(s[FIELD.date])}</dd><dt>Diagnóstico inicial</dt><dd>{text(s[FIELD.dxInicial])||'—'}</dd><dt>Diagnósticos asociados</dt><dd>{text(s[FIELD.dxs])||'—'}</dd><dt>Asistencia respiratoria</dt><dd>{text(s[FIELD.resp])||'—'}</dd><dt>Vasoactivos</dt><dd>{text(s[FIELD.vaso])||'—'}</dd><dt>NR / TRR</dt><dd>{text(s[FIELD.renal])||'—'}</dd><dt>ATB</dt><dd>{text(s[FIELD.atb])||'—'}</dd><dt>Enfermedad actual / evolución</dt><dd className="long">{text(s[FIELD.current])||'—'}</dd></dl></> : <p>Seleccioná un paciente</p>}</section>
-      </div>
-    </main>
-  </div>
-}
-
+function App(){ const [records,setRecords]=useState([]),[q,setQ]=useState(''),[centro,setCentro]=useState('Todos'),[sel,setSel]=useState(null),[err,setErr]=useState(''),[loading,setLoading]=useState(true);
+ useEffect(()=>{fetch('/.netlify/functions/patients').then(r=>r.json()).then(d=>{ if(d.error) setErr(d.error); else { const p=d.map(norm); setRecords(p); setSel(p[0]||null);} }).catch(e=>setErr(e.message)).finally(()=>setLoading(false))},[]);
+ const centros=useMemo(()=>['Todos',...new Set(records.map(p=>p.centro).filter(Boolean))],[records]);
+ const filtered=records.filter(p=>(centro==='Todos'||p.centro===centro) && [p.name,p.dni,p.centro,p.dx,p.dxs,p.enf].join(' ').toLowerCase().includes(q.toLowerCase()));
+ const stats={total:filtered.length, activos:filtered.filter(p=>!p.status||String(p.status).toLowerCase().includes('activo')).length, arm:filtered.filter(p=>yes(p.resp)||String(p.resp).toLowerCase().includes('arm')).length, vaso:filtered.filter(p=>yes(p.vaso)||String(p.vaso).length>1).length, trr:filtered.filter(p=>yes(p.renal)||String(p.renal).length>1).length, muerte:filtered.filter(p=>yes(p.muerte)).length};
+ return <div className="app"><aside><h1>Tele ICU<br/>Dashboard</h1><p>Panel operativo conectado a Airtable</p>{centros.map(c=><button key={c} className={centro===c?'active':''} onClick={()=>setCentro(c)}><Stethoscope size={16}/>{c}</button>)}</aside><main><header><div><h2>Pacientes Tele-ICU</h2><span>{loading?'Cargando...':`${filtered.length} pacientes visibles`}</span></div><label><Search size={18}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar nombre, DNI, centro o diagnóstico"/></label></header>{err&&<div className="error">Error Airtable: {err}</div>}<section className="stats"><Card icon={<Users/>} n={stats.total} t="Total"/><Card icon={<Activity/>} n={stats.activos} t="Activos"/><Card icon={<HeartPulse/>} n={stats.arm} t="ARM"/><Card icon={<HeartPulse/>} n={stats.vaso} t="Vasoactivos"/><Card icon={<Activity/>} n={stats.trr} t="TRR/NR"/><Card icon={<AlertTriangle/>} n={stats.muerte} t="Muerte"/></section><section className="grid"><div>{filtered.map(p=><article key={p.id} onClick={()=>setSel(p)} className={sel?.id===p.id?'patient selected':'patient'}><h3>{p.name||'Sin nombre'}</h3><p>{p.centro} · {p.edad||'—'} años · día {days(p.fi)}</p><b>{p.dx||p.dxs||'Sin diagnóstico cargado'}</b><div>{p.resp&&<span>Resp</span>}{p.vaso&&<span>Vaso</span>}{p.renal&&<span>Renal</span>}</div></article>)}</div><Detail p={sel}/></section></main></div>}
+function Card({icon,n,t}){return <div className="card">{icon}<strong>{n}</strong><span>{t}</span></div>}
+function Row({k,v}){return <><dt>{k}</dt><dd>{v||'—'}</dd></>}
+function Detail({p}){ if(!p) return <section className="detail">Seleccione un paciente</section>; return <section className="detail"><h2>{p.name}</h2><p className="muted">{p.centro} · DNI {p.dni||'—'}</p><dl><Row k="Edad / Sexo" v={`${p.edad||'—'} / ${p.sexo||'—'}`}/><Row k="Fecha ingreso" v={`${p.fi||'—'} · día ${days(p.fi)}`}/><Row k="Diagnóstico inicial" v={p.dx}/><Row k="Dx final" v={p.dxf}/><Row k="Diagnósticos asociados" v={p.dxs}/><Row k="Asistencia respiratoria" v={p.resp}/><Row k="Vasoactivos" v={p.vaso}/><Row k="NR / TRR" v={p.renal}/><Row k="ATB" v={p.atb}/><Row k="Enfermedad actual / evolución" v={p.enf}/></dl></section>}
 createRoot(document.getElementById('root')).render(<App/>);
