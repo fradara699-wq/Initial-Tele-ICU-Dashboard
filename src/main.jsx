@@ -36,10 +36,11 @@ const isMuerte = p => yes(p.muerte) || txt(p.status).includes('falle') || txt(p.
 const isEgresado = p => ['alta','egreso','egresado','derivado','fallecido','muerte','óbito','obito'].some(w => txt(p.status).includes(w));
 const isInternado = p => {
   const s = txt(p.status);
+  // En Airtable, los pacientes internados activos están como Status = "In progress"
+  if (s.includes('in progress')) return true;
   if (isMuerte(p) || isEgresado(p)) return false;
   if (['internado','internada','activo','activa','actual','hospitalizado','uti','ucc'].some(w => s.includes(w))) return true;
-  // si Status está vacío, lo mostramos para no ocultar pacientes por error de carga
-  return !s;
+  return false;
 };
 const isARM = p => yes(p.resp) || txt(p.resp).includes('arm') || txt(p.resp).includes('invasiva');
 const isVaso = p => yes(p.vaso) || String(p.vaso || '').trim().length > 1;
