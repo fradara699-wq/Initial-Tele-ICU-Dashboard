@@ -4,7 +4,8 @@ import { Activity, AlertTriangle, HeartPulse, Search, Stethoscope, Users, X } fr
 import './styles.css';
 
 const pick = (f, names) => names.map(n => f?.[n]).find(v => v !== undefined && v !== null && String(v).trim() !== '') || '';
-const yes = v => ['si','sí','yes','true','1','x'].includes(String(v||'').toLowerCase().trim());
+const txt = v => String(v || '').toLowerCase().trim();
+const yes = v => ['si','sí','yes','true','1','x'].includes(txt(v));
 const days = d => { if(!d) return '—'; const dt=new Date(d); if(isNaN(dt)) return '—'; return Math.max(1, Math.ceil((Date.now()-dt)/86400000)); };
 
 function norm(r){
@@ -26,22 +27,29 @@ function norm(r){
     vaso: pick(f,['Vasoactivos','Vaso','Vasopresores']),
     renal: pick(f,['NR','TRR','Terapia de reemplazo renal','Renal']),
     atb: pick(f,['ATB','Antibióticos','Antibioticos']),
-    status: pick(f,['Status','Estado']),
+    status: pick(f,['Status','Estado','Internado','Activo']),
     muerte: pick(f,['Muerte'])
   };
 }
 
-const isActivo = p => !p.status || String(p.status).toLowerCase().includes('activo');
-const isARM = p => yes(p.resp) || String(p.resp || '').toLowerCase().includes('arm');
+const isMuerte = p => yes(p.muerte) || txt(p.status).includes('falle') || txt(p.status).includes('muerte');
+const isEgresado = p => ['alta','egreso','egresado','derivado','fallecido','muerte','óbito','obito'].some(w => txt(p.status).includes(w));
+const isInternado = p => {
+  const s = txt(p.status);
+  if (isMuerte(p) || isEgresado(p)) return false;
+  if (['internado','internada','activo','activa','actual','hospitalizado','uti','ucc'].some(w => s.includes(w))) return true;
+  // si Status está vacío, lo mostramos para no ocultar pacientes por error de carga
+  return !s;
+};
+const isARM = p => yes(p.resp) || txt(p.resp).includes('arm') || txt(p.resp).includes('invasiva');
 const isVaso = p => yes(p.vaso) || String(p.vaso || '').trim().length > 1;
 const isTRR = p => yes(p.renal) || String(p.renal || '').trim().length > 1;
-const isMuerte = p => yes(p.muerte);
 
 function App(){
   const [records,setRecords] = useState([]);
   const [q,setQ] = useState('');
   const [centro,setCentro] = useState('Todos');
-  const [filter,setFilter] = useState('Todos');
+  const [filter,setFilter] = useState('Internados');
   const [sel,setSel] = useState(null);
   const [err,setErr] = useState('');
   const [loading,setLoading] = useState(true);
@@ -54,7 +62,8 @@ function App(){
         else {
           const p = d.map(norm);
           setRecords(p);
-          setSel(p[0] || null);
+          const firstInternado = p.find(isInternado);
+          setSel(firstInternado || p[0] || null);
         }
       })
       .catch(e=>setErr(e.message))
@@ -65,29 +74,30 @@ function App(){
 
   const base = records.filter(p =>
     (centro === 'Todos' || p.centro === centro) &&
-    [p.name,p.dni,p.centro,p.dx,p.dxf,p.dxs,p.enf].join(' ').toLowerCase().includes(q.toLowerCase())
+    [p.name,p.dni,p.centro,p.dx,p.dxf,p.dxs,p.enf,p.status].join(' ').toLowerCase().includes(q.toLowerCase())
   );
 
   const filtered = base.filter(p => {
-    if(filter === 'Activos') return isActivo(p);
-    if(filter === 'ARM') return isARM(p);
-    if(filter === 'Vasoactivos') return isVaso(p);
-    if(filter === 'TRR/NR') return isTRR(p);
+    if(filter === 'Internados') return isInternado(p);
+    if(filter === 'ARM') return isInternado(p) && isARM(p);
+    if(filter === 'Vasoactivos') return isInternado(p) && isVaso(p);
+    if(filter === 'TRR/NR') return isInternado(p) && isTRR(p);
     if(filter === 'Muerte') return isMuerte(p);
+    if(filter === 'Todos') return true;
     return true;
   });
 
   const stats = {
     total: base.length,
-    activos: base.filter(isActivo).length,
-    arm: base.filter(isARM).length,
-    vaso: base.filter(isVaso).length,
-    trr: base.filter(isTRR).length,
+    internados: base.filter(isInternado).length,
+    arm: base.filter(p=>isInternado(p) && isARM(p)).length,
+    vaso: base.filter(p=>isInternado(p) && isVaso(p)).length,
+    trr: base.filter(p=>isInternado(p) && isTRR(p)).length,
     muerte: base.filter(isMuerte).length
   };
 
   const chooseFilter = (next) => {
-    setFilter(prev => prev === next ? 'Todos' : next);
+    setFilter(prev => prev === next ? 'Internados' : next);
   };
 
   return (
@@ -110,26 +120,24 @@ function App(){
           </div>
           <label>
             <Search size={18}/>
-            <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar nombre, DNI, centro o diagnóstico"/>
+            <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar nombre, DNI, centro, diagnóstico o status"/>
           </label>
         </header>
 
         {err && <div className="error">Error Airtable: {err}</div>}
 
-        {filter !== 'Todos' && (
-          <div className="activeFilter">
-            Filtro activo: <strong>{filter}</strong>
-            <button onClick={()=>setFilter('Todos')}><X size={14}/> Quitar filtro</button>
-          </div>
-        )}
+        <div className="activeFilter">
+          Vista actual: <strong>{filter}</strong>
+          {filter !== 'Internados' && <button onClick={()=>setFilter('Internados')}><X size={14}/> Volver a internados</button>}
+        </div>
 
         <section className="stats">
-          <Card active={filter==='Todos'} onClick={()=>chooseFilter('Todos')} icon={<Users/>} n={stats.total} t="Total"/>
-          <Card active={filter==='Activos'} onClick={()=>chooseFilter('Activos')} icon={<Activity/>} n={stats.activos} t="Activos"/>
+          <Card active={filter==='Internados'} onClick={()=>chooseFilter('Internados')} icon={<Users/>} n={stats.internados} t="Internados"/>
           <Card active={filter==='ARM'} onClick={()=>chooseFilter('ARM')} icon={<HeartPulse/>} n={stats.arm} t="ARM"/>
           <Card active={filter==='Vasoactivos'} onClick={()=>chooseFilter('Vasoactivos')} icon={<HeartPulse/>} n={stats.vaso} t="Vasoactivos"/>
           <Card active={filter==='TRR/NR'} onClick={()=>chooseFilter('TRR/NR')} icon={<Activity/>} n={stats.trr} t="TRR/NR"/>
           <Card active={filter==='Muerte'} onClick={()=>chooseFilter('Muerte')} icon={<AlertTriangle/>} n={stats.muerte} t="Muerte"/>
+          <Card active={filter==='Todos'} onClick={()=>chooseFilter('Todos')} icon={<Activity/>} n={stats.total} t="Todos"/>
         </section>
 
         <section className="grid">
@@ -140,6 +148,7 @@ function App(){
                 <p>{p.centro} · {p.edad || '—'} años · día {days(p.fi)}</p>
                 <b>{p.dx || p.dxs || 'Sin diagnóstico cargado'}</b>
                 <div>
+                  {p.status && <span>{p.status}</span>}
                   {isARM(p) && <span>ARM</span>}
                   {isVaso(p) && <span>Vaso</span>}
                   {isTRR(p) && <span>TRR</span>}
@@ -166,7 +175,7 @@ function Detail({p}){
   return (
     <section className="detail">
       <h2>{p.name}</h2>
-      <p className="muted">{p.centro} · DNI {p.dni || '—'}</p>
+      <p className="muted">{p.centro} · DNI {p.dni || '—'} · Status {p.status || '—'}</p>
       <dl>
         <Row k="Edad / Sexo" v={`${p.edad || '—'} / ${p.sexo || '—'}`}/>
         <Row k="Fecha ingreso" v={`${p.fi || '—'} · día ${days(p.fi)}`}/>
