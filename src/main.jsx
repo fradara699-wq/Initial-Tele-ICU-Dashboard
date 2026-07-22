@@ -1,116 +1,139 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, AlertTriangle, HeartPulse, Search, Stethoscope, Users, X } from 'lucide-react';
+import { Activity, AlertTriangle, HeartPulse, Pencil, Save, Search, Stethoscope, Users, X } from 'lucide-react';
 import './styles.css';
 
-const pick = (f, names) => names.map(n => f?.[n]).find(v => v !== undefined && v !== null && String(v).trim() !== '') || '';
-const txt = v => String(v || '').toLowerCase().trim();
-const yes = v => ['si','sí','yes','true','1','x'].includes(txt(v));
-const days = d => { if(!d) return '—'; const dt=new Date(d); if(isNaN(dt)) return '—'; return Math.max(1, Math.ceil((Date.now()-dt)/86400000)); };
+const findField = (fields, names) => {
+  const key = names.find(name => fields?.[name] !== undefined && fields?.[name] !== null);
+  return { key: key || names[0], value: key ? fields[key] : '' };
+};
+const txt = value => String(value || '').toLowerCase().trim();
+const yes = value => ['si', 'sí', 'yes', 'true', '1', 'x'].includes(txt(value));
+const days = date => {
+  if (!date) return '—';
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return Math.max(1, Math.ceil((Date.now() - parsed.getTime()) / 86400000));
+};
 
-function norm(r){
-  const f = r.fields || {};
-  return {
-    id: r.id,
-    name: pick(f,['Name','Nombre','Paciente']),
-    dni: pick(f,['DNI','Documento']),
-    centro: pick(f,['Centro','CENTRO','Institución','Institucion']) || 'Sin centro',
-    fi: pick(f,['FI','Fecha ingreso','Fecha de ingreso']),
-    tipo: pick(f,['tipo','Tipo']),
-    dx: pick(f,['Dx inicial','Diagnóstico inicial','Diagnostico inicial']),
-    dxf: pick(f,['Dx final','Diagnóstico final','Diagnostico final']),
-    dxs: pick(f,['Dxs','Diagnósticos asociados','Diagnosticos asociados']),
-    edad: pick(f,['Edad','age']),
-    sexo: pick(f,['Sexo','sex']),
-    enf: pick(f,['enfermedad actual','Enfermedad actual','Evolución','Evolucion']),
-    resp: pick(f,['Asistencia respiratoria','ARM','Resp']),
-    vaso: pick(f,['Vasoactivos','Vaso','Vasopresores']),
-    renal: pick(f,['NR','TRR','Terapia de reemplazo renal','Renal']),
-    atb: pick(f,['ATB','Antibióticos','Antibioticos']),
-    status: pick(f,['Status','Estado','Internado','Activo']),
-    muerte: pick(f,['Muerte'])
-  };
+const FIELD_OPTIONS = {
+  name: ['Name', 'Nombre', 'Paciente'],
+  dni: ['DNI', 'Documento'],
+  centro: ['Centro', 'CENTRO', 'Institución', 'Institucion'],
+  fi: ['FI', 'Fecha ingreso', 'Fecha de ingreso'],
+  dx: ['Dx inicial', 'Diagnóstico inicial', 'Diagnostico inicial'],
+  dxf: ['Dx final', 'Diagnóstico final', 'Diagnostico final'],
+  dxs: ['Dxs', 'Diagnósticos asociados', 'Diagnosticos asociados'],
+  edad: ['Edad', 'age'],
+  sexo: ['Sexo', 'sex'],
+  enf: ['enfermedad actual', 'Enfermedad actual', 'Evolución', 'Evolucion'],
+  resp: ['Asistencia respiratoria', 'ARM', 'Resp'],
+  vaso: ['Vasoactivos', 'Vaso', 'Vasopresores'],
+  renal: ['NR', 'TRR', 'Terapia de reemplazo renal', 'Renal'],
+  atb: ['ATB', 'Antibióticos', 'Antibioticos'],
+  status: ['Status', 'Estado', 'Internado', 'Activo'],
+  muerte: ['Muerte']
+};
+
+function norm(record) {
+  const fields = record.fields || {};
+  const normalized = { id: record.id, fieldKeys: {} };
+
+  Object.entries(FIELD_OPTIONS).forEach(([property, names]) => {
+    const match = findField(fields, names);
+    normalized[property] = match.value;
+    normalized.fieldKeys[property] = match.key;
+  });
+
+  normalized.centro = normalized.centro || 'Sin centro';
+  return normalized;
 }
 
-const isMuerte = p => yes(p.muerte) || txt(p.status).includes('falle') || txt(p.status).includes('muerte');
-const isEgresado = p => ['alta','egreso','egresado','derivado','fallecido','muerte','óbito','obito'].some(w => txt(p.status).includes(w));
-const isInternado = p => {
-  const s = txt(p.status);
-  // En Airtable, los pacientes internados activos están como Status = "In progress"
-  if (s.includes('in progress')) return true;
-  if (isMuerte(p) || isEgresado(p)) return false;
-  if (['internado','internada','activo','activa','actual','hospitalizado','uti','ucc'].some(w => s.includes(w))) return true;
-  return false;
+const isMuerte = patient => yes(patient.muerte) || txt(patient.status).includes('falle') || txt(patient.status).includes('muerte');
+const isEgresado = patient => ['alta', 'egreso', 'egresado', 'derivado', 'fallecido', 'muerte', 'óbito', 'obito'].some(word => txt(patient.status).includes(word));
+const isInternado = patient => {
+  const status = txt(patient.status);
+  if (status.includes('in progress')) return true;
+  if (isMuerte(patient) || isEgresado(patient)) return false;
+  return ['internado', 'internada', 'activo', 'activa', 'actual', 'hospitalizado', 'uti', 'ucc'].some(word => status.includes(word));
 };
-const isARM = p => yes(p.resp) || txt(p.resp).includes('arm') || txt(p.resp).includes('invasiva');
-const isVaso = p => yes(p.vaso) || String(p.vaso || '').trim().length > 1;
-const isTRR = p => yes(p.renal) || String(p.renal || '').trim().length > 1;
+const isARM = patient => yes(patient.resp) || txt(patient.resp).includes('arm') || txt(patient.resp).includes('invasiva');
+const isVaso = patient => yes(patient.vaso) || String(patient.vaso || '').trim().length > 1;
+const isTRR = patient => yes(patient.renal) || String(patient.renal || '').trim().length > 1;
 
-function App(){
-  const [records,setRecords] = useState([]);
-  const [q,setQ] = useState('');
-  const [centro,setCentro] = useState('Todos');
-  const [filter,setFilter] = useState('Internados');
-  const [sel,setSel] = useState(null);
-  const [err,setErr] = useState('');
-  const [loading,setLoading] = useState(true);
+function App() {
+  const [records, setRecords] = useState([]);
+  const [q, setQ] = useState('');
+  const [centro, setCentro] = useState('Todos');
+  const [filter, setFilter] = useState('Internados');
+  const [sel, setSel] = useState(null);
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  useEffect(()=>{
-    fetch('/.netlify/functions/patients')
-      .then(r=>r.json())
-      .then(d=>{
-        if(d.error) setErr(d.error);
-        else {
-          const p = d.map(norm);
-          setRecords(p);
-          const firstInternado = p.find(isInternado);
-          setSel(firstInternado || p[0] || null);
-        }
-      })
-      .catch(e=>setErr(e.message))
-      .finally(()=>setLoading(false));
-  },[]);
+  const loadPatients = async (selectedId = null) => {
+    setLoading(true);
+    setErr('');
+    try {
+      const response = await fetch('/.netlify/functions/patients', { cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || 'No se pudieron cargar los pacientes');
+      const patients = data.map(norm);
+      setRecords(patients);
+      setSel(current => {
+        const id = selectedId || current?.id;
+        return patients.find(patient => patient.id === id) || patients.find(isInternado) || patients[0] || null;
+      });
+    } catch (error) {
+      setErr(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const centros = useMemo(()=>['Todos', ...new Set(records.map(p=>p.centro).filter(Boolean))], [records]);
+  useEffect(() => {
+    loadPatients();
+  }, []);
 
-  const base = records.filter(p =>
-    (centro === 'Todos' || p.centro === centro) &&
-    [p.name,p.dni,p.centro,p.dx,p.dxf,p.dxs,p.enf,p.status].join(' ').toLowerCase().includes(q.toLowerCase())
+  const centros = useMemo(() => ['Todos', ...new Set(records.map(patient => patient.centro).filter(Boolean))], [records]);
+
+  const base = records.filter(patient =>
+    (centro === 'Todos' || patient.centro === centro) &&
+    [patient.name, patient.dni, patient.centro, patient.dx, patient.dxf, patient.dxs, patient.enf, patient.status]
+      .join(' ')
+      .toLowerCase()
+      .includes(q.toLowerCase())
   );
 
-  const filtered = base.filter(p => {
-    if(filter === 'Internados') return isInternado(p);
-    if(filter === 'ARM') return isInternado(p) && isARM(p);
-    if(filter === 'Vasoactivos') return isInternado(p) && isVaso(p);
-    if(filter === 'TRR/NR') return isInternado(p) && isTRR(p);
-    if(filter === 'Muerte') return isMuerte(p);
-    if(filter === 'Todos') return true;
+  const filtered = base.filter(patient => {
+    if (filter === 'Internados') return isInternado(patient);
+    if (filter === 'ARM') return isInternado(patient) && isARM(patient);
+    if (filter === 'Vasoactivos') return isInternado(patient) && isVaso(patient);
+    if (filter === 'TRR/NR') return isInternado(patient) && isTRR(patient);
+    if (filter === 'Muerte') return isMuerte(patient);
     return true;
   });
 
   const stats = {
     total: base.length,
     internados: base.filter(isInternado).length,
-    arm: base.filter(p=>isInternado(p) && isARM(p)).length,
-    vaso: base.filter(p=>isInternado(p) && isVaso(p)).length,
-    trr: base.filter(p=>isInternado(p) && isTRR(p)).length,
+    arm: base.filter(patient => isInternado(patient) && isARM(patient)).length,
+    vaso: base.filter(patient => isInternado(patient) && isVaso(patient)).length,
+    trr: base.filter(patient => isInternado(patient) && isTRR(patient)).length,
     muerte: base.filter(isMuerte).length
   };
 
-  const chooseFilter = (next) => {
-    setFilter(prev => prev === next ? 'Internados' : next);
-  };
+  const chooseFilter = next => setFilter(previous => previous === next ? 'Internados' : next);
 
   return (
     <div className="app">
       <aside>
-        <h1>Tele ICU<br/>Dashboard</h1>
+        <h1>Tele ICU<br />Dashboard</h1>
         <p>Panel operativo conectado a Airtable</p>
-        {centros.map(c =>
-          <button key={c} className={centro===c?'active':''} onClick={()=>setCentro(c)}>
-            <Stethoscope size={16}/>{c}
+        {centros.map(item => (
+          <button key={item} className={centro === item ? 'active' : ''} onClick={() => setCentro(item)}>
+            <Stethoscope size={16} />{item}
           </button>
-        )}
+        ))}
       </aside>
 
       <main>
@@ -119,9 +142,9 @@ function App(){
             <h2>Pacientes Tele-ICU</h2>
             <span>{loading ? 'Cargando...' : `${filtered.length} pacientes visibles`}</span>
           </div>
-          <label>
-            <Search size={18}/>
-            <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar nombre, DNI, centro, diagnóstico o status"/>
+          <label className="searchBox">
+            <Search size={18} />
+            <input value={q} onChange={event => setQ(event.target.value)} placeholder="Buscar nombre, DNI, centro, diagnóstico o status" />
           </label>
         </header>
 
@@ -129,68 +152,151 @@ function App(){
 
         <div className="activeFilter">
           Vista actual: <strong>{filter}</strong>
-          {filter !== 'Internados' && <button onClick={()=>setFilter('Internados')}><X size={14}/> Volver a internados</button>}
+          {filter !== 'Internados' && <button onClick={() => setFilter('Internados')}><X size={14} /> Volver a internados</button>}
         </div>
 
         <section className="stats">
-          <Card active={filter==='Internados'} onClick={()=>chooseFilter('Internados')} icon={<Users/>} n={stats.internados} t="Internados"/>
-          <Card active={filter==='ARM'} onClick={()=>chooseFilter('ARM')} icon={<HeartPulse/>} n={stats.arm} t="ARM"/>
-          <Card active={filter==='Vasoactivos'} onClick={()=>chooseFilter('Vasoactivos')} icon={<HeartPulse/>} n={stats.vaso} t="Vasoactivos"/>
-          <Card active={filter==='TRR/NR'} onClick={()=>chooseFilter('TRR/NR')} icon={<Activity/>} n={stats.trr} t="TRR/NR"/>
-          <Card active={filter==='Muerte'} onClick={()=>chooseFilter('Muerte')} icon={<AlertTriangle/>} n={stats.muerte} t="Muerte"/>
-          <Card active={filter==='Todos'} onClick={()=>chooseFilter('Todos')} icon={<Activity/>} n={stats.total} t="Todos"/>
+          <Card active={filter === 'Internados'} onClick={() => chooseFilter('Internados')} icon={<Users />} n={stats.internados} t="Internados" />
+          <Card active={filter === 'ARM'} onClick={() => chooseFilter('ARM')} icon={<HeartPulse />} n={stats.arm} t="ARM" />
+          <Card active={filter === 'Vasoactivos'} onClick={() => chooseFilter('Vasoactivos')} icon={<HeartPulse />} n={stats.vaso} t="Vasoactivos" />
+          <Card active={filter === 'TRR/NR'} onClick={() => chooseFilter('TRR/NR')} icon={<Activity />} n={stats.trr} t="TRR/NR" />
+          <Card active={filter === 'Muerte'} onClick={() => chooseFilter('Muerte')} icon={<AlertTriangle />} n={stats.muerte} t="Muerte" />
+          <Card active={filter === 'Todos'} onClick={() => chooseFilter('Todos')} icon={<Activity />} n={stats.total} t="Todos" />
         </section>
 
         <section className="grid">
           <div>
-            {filtered.map(p =>
-              <article key={p.id} onClick={()=>setSel(p)} className={sel?.id===p.id?'patient selected':'patient'}>
-                <h3>{p.name || 'Sin nombre'}</h3>
-                <p>{p.centro} · {p.edad || '—'} años · día {days(p.fi)}</p>
-                <b>{p.dx || p.dxs || 'Sin diagnóstico cargado'}</b>
+            {filtered.map(patient => (
+              <article key={patient.id} onClick={() => setSel(patient)} className={sel?.id === patient.id ? 'patient selected' : 'patient'}>
+                <h3>{patient.name || 'Sin nombre'}</h3>
+                <p>{patient.centro} · {patient.edad || '—'} años · día {days(patient.fi)}</p>
+                <b>{patient.dx || patient.dxs || 'Sin diagnóstico cargado'}</b>
                 <div>
-                  {p.status && <span>{p.status}</span>}
-                  {isARM(p) && <span>ARM</span>}
-                  {isVaso(p) && <span>Vaso</span>}
-                  {isTRR(p) && <span>TRR</span>}
-                  {isMuerte(p) && <span>Muerte</span>}
+                  {patient.status && <span>{patient.status}</span>}
+                  {isARM(patient) && <span>ARM</span>}
+                  {isVaso(patient) && <span>Vaso</span>}
+                  {isTRR(patient) && <span>TRR</span>}
+                  {isMuerte(patient) && <span>Muerte</span>}
                 </div>
               </article>
-            )}
+            ))}
           </div>
-          <Detail p={sel}/>
+          <Detail patient={sel} onSaved={loadPatients} />
         </section>
       </main>
     </div>
   );
 }
 
-function Card({icon,n,t,onClick,active}){
+function Card({ icon, n, t, onClick, active }) {
   return <button className={active ? 'card activeCard' : 'card'} onClick={onClick}>{icon}<strong>{n}</strong><span>{t}</span></button>;
 }
 
-function Row({k,v}){return <><dt>{k}</dt><dd>{v || '—'}</dd></>}
+function Row({ label, value }) {
+  return <><dt>{label}</dt><dd>{value || '—'}</dd></>;
+}
 
-function Detail({p}){
-  if(!p) return <section className="detail">Seleccione un paciente</section>;
+const EDIT_FIELDS = [
+  ['name', 'Nombre'], ['dni', 'DNI'], ['edad', 'Edad'], ['sexo', 'Sexo'],
+  ['centro', 'Centro'], ['fi', 'Fecha ingreso'], ['status', 'Status'],
+  ['dx', 'Diagnóstico inicial'], ['dxf', 'Diagnóstico final'], ['dxs', 'Diagnósticos asociados'],
+  ['resp', 'Asistencia respiratoria'], ['vaso', 'Vasoactivos'], ['renal', 'NR / TRR'], ['atb', 'ATB'],
+  ['enf', 'Enfermedad actual / evolución']
+];
+
+function Detail({ patient, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    setEditing(false);
+    setMessage('');
+    if (patient) {
+      const initial = {};
+      EDIT_FIELDS.forEach(([key]) => { initial[key] = patient[key] ?? ''; });
+      setForm(initial);
+    }
+  }, [patient?.id]);
+
+  if (!patient) return <section className="detail">Seleccione un paciente</section>;
+
+  const save = async () => {
+    setSaving(true);
+    setMessage('');
+    try {
+      const fields = {};
+      EDIT_FIELDS.forEach(([key]) => {
+        const airtableField = patient.fieldKeys[key];
+        if (airtableField) fields[airtableField] = form[key] ?? '';
+      });
+
+      const response = await fetch('/.netlify/functions/updatePatient', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recordId: patient.id, fields })
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || 'No se pudieron guardar los cambios');
+      setMessage('Cambios guardados correctamente');
+      setEditing(false);
+      await onSaved(patient.id);
+    } catch (error) {
+      setMessage(`Error: ${error.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <section className="detail">
-      <h2>{p.name}</h2>
-      <p className="muted">{p.centro} · DNI {p.dni || '—'} · Status {p.status || '—'}</p>
-      <dl>
-        <Row k="Edad / Sexo" v={`${p.edad || '—'} / ${p.sexo || '—'}`}/>
-        <Row k="Fecha ingreso" v={`${p.fi || '—'} · día ${days(p.fi)}`}/>
-        <Row k="Diagnóstico inicial" v={p.dx}/>
-        <Row k="Dx final" v={p.dxf}/>
-        <Row k="Diagnósticos asociados" v={p.dxs}/>
-        <Row k="Asistencia respiratoria" v={p.resp}/>
-        <Row k="Vasoactivos" v={p.vaso}/>
-        <Row k="NR / TRR" v={p.renal}/>
-        <Row k="ATB" v={p.atb}/>
-        <Row k="Enfermedad actual / evolución" v={p.enf}/>
-      </dl>
+      <div className="detailHeader">
+        <div>
+          <h2>{patient.name}</h2>
+          <p className="muted">{patient.centro} · DNI {patient.dni || '—'} · Status {patient.status || '—'}</p>
+        </div>
+        {!editing && <button className="editButton" onClick={() => setEditing(true)}><Pencil size={17} /> Editar</button>}
+      </div>
+
+      {message && <div className={message.startsWith('Error') ? 'saveMessage errorMessage' : 'saveMessage'}>{message}</div>}
+
+      {editing ? (
+        <div className="editForm">
+          {EDIT_FIELDS.map(([key, label]) => {
+            const multiline = ['dx', 'dxf', 'dxs', 'enf'].includes(key);
+            return (
+              <label className={multiline ? 'field fullWidth' : 'field'} key={key}>
+                <span>{label}</span>
+                {multiline ? (
+                  <textarea value={form[key] ?? ''} onChange={event => setForm(current => ({ ...current, [key]: event.target.value }))} rows={key === 'enf' ? 6 : 3} />
+                ) : (
+                  <input type={key === 'fi' ? 'date' : 'text'} value={form[key] ?? ''} onChange={event => setForm(current => ({ ...current, [key]: event.target.value }))} />
+                )}
+              </label>
+            );
+          })}
+          <div className="formActions fullWidth">
+            <button className="cancelButton" disabled={saving} onClick={() => setEditing(false)}><X size={17} /> Cancelar</button>
+            <button className="saveButton" disabled={saving} onClick={save}><Save size={17} /> {saving ? 'Guardando...' : 'Guardar cambios'}</button>
+          </div>
+        </div>
+      ) : (
+        <dl>
+          <Row label="Edad / Sexo" value={`${patient.edad || '—'} / ${patient.sexo || '—'}`} />
+          <Row label="Fecha ingreso" value={`${patient.fi || '—'} · día ${days(patient.fi)}`} />
+          <Row label="Diagnóstico inicial" value={patient.dx} />
+          <Row label="Dx final" value={patient.dxf} />
+          <Row label="Diagnósticos asociados" value={patient.dxs} />
+          <Row label="Asistencia respiratoria" value={patient.resp} />
+          <Row label="Vasoactivos" value={patient.vaso} />
+          <Row label="NR / TRR" value={patient.renal} />
+          <Row label="ATB" value={patient.atb} />
+          <Row label="Enfermedad actual / evolución" value={patient.enf} />
+        </dl>
+      )}
     </section>
   );
 }
 
-createRoot(document.getElementById('root')).render(<App/>);
+createRoot(document.getElementById('root')).render(<App />);
