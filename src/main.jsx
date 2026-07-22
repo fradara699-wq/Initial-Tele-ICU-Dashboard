@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, AlertTriangle, HeartPulse, Pencil, Save, Search, Stethoscope, Users, X } from 'lucide-react';
+import { Activity, AlertTriangle, HeartPulse, Pencil, Plus, Save, Search, Stethoscope, UserCheck, Users, X } from 'lucide-react';
 import './styles.css';
 
 const findField = (fields, names) => {
@@ -69,6 +69,7 @@ function App() {
   const [sel, setSel] = useState(null);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
 
   const loadPatients = async (selectedId = null) => {
     setLoading(true);
@@ -142,10 +143,13 @@ function App() {
             <h2>Pacientes Tele-ICU</h2>
             <span>{loading ? 'Cargando...' : `${filtered.length} pacientes visibles`}</span>
           </div>
-          <label className="searchBox">
-            <Search size={18} />
-            <input value={q} onChange={event => setQ(event.target.value)} placeholder="Buscar nombre, DNI, centro, diagnóstico o status" />
-          </label>
+          <div className="headerActions">
+            <button className="newPatientButton" onClick={() => setCreating(true)}><Plus size={18} /> Nuevo paciente</button>
+            <label className="searchBox">
+              <Search size={18} />
+              <input value={q} onChange={event => setQ(event.target.value)} placeholder="Buscar nombre, DNI, centro, diagnóstico o status" />
+            </label>
+          </div>
         </header>
 
         {err && <div className="error">Error Airtable: {err}</div>}
@@ -184,6 +188,7 @@ function App() {
           <Detail patient={sel} onSaved={loadPatients} />
         </section>
       </main>
+      {creating && <NewPatientModal records={records} onClose={() => setCreating(false)} onCreated={async id => { setCreating(false); setFilter('Internados'); await loadPatients(id); }} />}
     </div>
   );
 }
@@ -203,6 +208,86 @@ const EDIT_FIELDS = [
   ['resp', 'Asistencia respiratoria'], ['vaso', 'Vasoactivos'], ['renal', 'NR / TRR'], ['atb', 'ATB'],
   ['enf', 'Enfermedad actual / evolución']
 ];
+
+
+const DEFAULT_FIELD_KEYS = {
+  name: 'Name', dni: 'DNI', edad: 'Edad', sexo: 'Sexo', centro: 'Centro', fi: 'FI',
+  status: 'Status', dx: 'Dx inicial', dxf: 'Dx final', dxs: 'Dxs', enf: 'enfermedad actual',
+  resp: 'Asistencia respiratoria', vaso: 'Vasoactivos', renal: 'NR', atb: 'ATB'
+};
+
+function NewPatientModal({ records, onClose, onCreated }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [form, setForm] = useState({
+    name: '', dni: '', edad: '', sexo: '', centro: '', fi: today,
+    dx: '', dxf: '', dxs: '', resp: '', vaso: '', renal: '', atb: '', enf: ''
+  });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const fieldKeys = records[0]?.fieldKeys || DEFAULT_FIELD_KEYS;
+
+  const create = async () => {
+    if (!String(form.name || '').trim()) {
+      setMessage('Error: cargá el nombre del paciente');
+      return;
+    }
+    setSaving(true);
+    setMessage('');
+    try {
+      const fields = {};
+      Object.entries(form).forEach(([key, value]) => {
+        const airtableField = fieldKeys[key] || DEFAULT_FIELD_KEYS[key];
+        if (airtableField && value !== '') fields[airtableField] = value;
+      });
+      fields[fieldKeys.status || DEFAULT_FIELD_KEYS.status] = 'In Progress';
+
+      const response = await fetch('/.netlify/functions/createPatient', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields })
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || 'No se pudo crear el paciente');
+      await onCreated(data.id);
+    } catch (error) {
+      setMessage(`Error: ${error.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modalBackdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="modalCard">
+        <div className="detailHeader">
+          <div><h2>Nuevo paciente</h2><p className="muted">Se guardará como <strong>In Progress</strong></p></div>
+          <button className="iconButton" onClick={onClose}><X size={20} /></button>
+        </div>
+        {message && <div className="saveMessage errorMessage">{message}</div>}
+        <div className="editForm">
+          {EDIT_FIELDS.filter(([key]) => key !== 'status').map(([key, label]) => {
+            const multiline = ['dx', 'dxf', 'dxs', 'enf'].includes(key);
+            return (
+              <label className={multiline ? 'field fullWidth' : 'field'} key={key}>
+                <span>{label}{key === 'name' ? ' *' : ''}</span>
+                {multiline ? (
+                  <textarea value={form[key] ?? ''} onChange={event => setForm(current => ({ ...current, [key]: event.target.value }))} rows={key === 'enf' ? 5 : 3} />
+                ) : (
+                  <input type={key === 'fi' ? 'date' : 'text'} value={form[key] ?? ''} onChange={event => setForm(current => ({ ...current, [key]: event.target.value }))} />
+                )}
+              </label>
+            );
+          })}
+          <div className="formActions fullWidth">
+            <button className="cancelButton" disabled={saving} onClick={onClose}><X size={17} /> Cancelar</button>
+            <button className="saveButton" disabled={saving} onClick={create}><Save size={17} /> {saving ? 'Guardando...' : 'Crear paciente'}</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
 
 function Detail({ patient, onSaved }) {
   const [editing, setEditing] = useState(false);
@@ -249,6 +334,28 @@ function Detail({ patient, onSaved }) {
     }
   };
 
+  const discharge = async () => {
+    if (!window.confirm(`¿Está seguro de dar de alta a ${patient.name || 'este paciente'}?`)) return;
+    setSaving(true);
+    setMessage('');
+    try {
+      const statusField = patient.fieldKeys.status || 'Status';
+      const response = await fetch('/.netlify/functions/updatePatient', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recordId: patient.id, fields: { [statusField]: 'Discharged' } })
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || 'No se pudo dar de alta');
+      setMessage('Paciente dado de alta correctamente');
+      await onSaved('__select_first_active__');
+    } catch (error) {
+      setMessage(`Error: ${error.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <section className="detail">
       <div className="detailHeader">
@@ -256,7 +363,10 @@ function Detail({ patient, onSaved }) {
           <h2>{patient.name}</h2>
           <p className="muted">{patient.centro} · DNI {patient.dni || '—'} · Status {patient.status || '—'}</p>
         </div>
-        {!editing && <button className="editButton" onClick={() => setEditing(true)}><Pencil size={17} /> Editar</button>}
+        {!editing && <div className="detailButtons">
+          {isInternado(patient) && <button className="dischargeButton" disabled={saving} onClick={discharge}><UserCheck size={17} /> Dar de alta</button>}
+          <button className="editButton" onClick={() => setEditing(true)}><Pencil size={17} /> Editar</button>
+        </div>}
       </div>
 
       {message && <div className={message.startsWith('Error') ? 'saveMessage errorMessage' : 'saveMessage'}>{message}</div>}

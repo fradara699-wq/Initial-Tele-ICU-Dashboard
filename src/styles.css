@@ -68,3 +68,15 @@ dd{margin:0;color:#475569;white-space:pre-wrap}
 .saveMessage{margin:14px 0 4px;padding:10px 12px;border-radius:10px;background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
 .errorMessage{background:#fee2e2;color:#991b1b;border-color:#fecaca}
 @media(max-width:650px){.editForm{grid-template-columns:1fr}.fullWidth{grid-column:auto}.detailHeader{flex-direction:column}.editButton{width:100%}}
+
+.headerActions{display:flex;align-items:center;gap:12px}
+.newPatientButton{border:0;border-radius:12px;padding:12px 15px;background:#16a34a;color:white;display:inline-flex;align-items:center;gap:8px;font-weight:800;cursor:pointer;white-space:nowrap}
+.newPatientButton:hover{background:#15803d}
+.detailButtons{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.dischargeButton{border:0;border-radius:11px;padding:10px 14px;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;font-weight:700;background:#16a34a;color:white}
+.dischargeButton:hover{background:#15803d}.dischargeButton:disabled{opacity:.6;cursor:not-allowed}
+.modalBackdrop{position:fixed;inset:0;background:rgba(15,23,42,.65);display:flex;align-items:center;justify-content:center;padding:24px;z-index:1000;overflow:auto}
+.modalCard{width:min(850px,100%);max-height:92vh;overflow:auto;background:white;border-radius:22px;padding:24px;box-shadow:0 30px 80px rgba(0,0,0,.3)}
+.iconButton{border:0;background:#e2e8f0;color:#334155;width:38px;height:38px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.iconButton:hover{background:#cbd5e1}
+@media(max-width:900px){.headerActions{flex-direction:column;align-items:stretch}.newPatientButton{justify-content:center}.detailButtons{width:100%;justify-content:stretch}.detailButtons button{flex:1}}
